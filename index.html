@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Agregar Profesor Virtual</title>
+  <style>
+    :root {
+      --bg: #f5f7fa; --card: #ffffff; --text: #1b2a41; --muted: #5b6b82;
+      --primary: #1f3a68; --primary-text: #ffffff; --border: #d3dbe6;
+      --ok: #1b7f4b; --warn: #a15c00; --err: #b3261e; --drop: #eaf0fa;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #11161d; --card: #1a222d; --text: #e6ecf5; --muted: #9aa9bd;
+        --primary: #6c9bf0; --primary-text: #0b1220; --border: #2d394a;
+        --ok: #5fd18f; --warn: #f0b04f; --err: #ff8a80; --drop: #202c3d;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--bg); color: var(--text);
+      font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    }
+    main { max-width: 720px; margin: 0 auto; padding: 32px 16px 64px; }
+    h1 { font-size: 1.6rem; margin: 0 0 4px; }
+    .sub { color: var(--muted); margin: 0 0 24px; }
+    .card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 12px; padding: 20px; margin-bottom: 20px;
+    }
+    #drop {
+      border: 2px dashed var(--border); border-radius: 12px; padding: 36px 16px;
+      text-align: center; cursor: pointer; transition: background .15s, border-color .15s;
+    }
+    #drop.over, #drop:focus-visible { background: var(--drop); border-color: var(--primary); outline: none; }
+    #drop strong { display: block; font-size: 1.1rem; margin-bottom: 4px; }
+    #drop span { color: var(--muted); font-size: .92rem; }
+    label { display: block; font-weight: 600; margin: 14px 0 4px; }
+    label:first-child { margin-top: 0; }
+    input[type=text], textarea {
+      width: 100%; padding: 9px 11px; border: 1px solid var(--border); border-radius: 8px;
+      background: var(--bg); color: var(--text); font: inherit;
+    }
+    textarea { font-family: ui-monospace, Consolas, monospace; font-size: .9rem; min-height: 90px; }
+    .hint { color: var(--muted); font-size: .85rem; margin: 3px 0 0; }
+    details summary { cursor: pointer; font-weight: 600; }
+    button {
+      font: inherit; font-weight: 600; padding: 7px 14px; border-radius: 8px; cursor: pointer;
+      border: 1px solid var(--primary); background: var(--primary); color: var(--primary-text);
+    }
+    button.ghost { background: transparent; color: var(--primary); }
+    ul { list-style: none; margin: 0; padding: 0; }
+    li { padding: 12px 0; border-top: 1px solid var(--border); display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+    li:first-child { border-top: 0; }
+    .name { flex: 1 1 240px; min-width: 0; word-break: break-all; }
+    .msg { font-size: .88rem; color: var(--muted); display: block; }
+    .ok { color: var(--ok); } .warn { color: var(--warn); } .err { color: var(--err); }
+    .privacy { color: var(--muted); font-size: .85rem; text-align: center; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+<main id="gate">
+  <h1>Acceso</h1>
+  <p class="sub">Ingresa tus credenciales para usar la herramienta.</p>
+  <form class="card" id="loginForm" autocomplete="off">
+    <label for="user">Usuario</label>
+    <input id="user" type="text" autocomplete="off" autocapitalize="off" required>
+    <label for="pass">Contraseña</label>
+    <input id="pass" type="password" autocomplete="off" required>
+    <p id="loginErr" class="msg err" role="alert" hidden>Usuario o contraseña incorrectos.</p>
+    <p style="margin:16px 0 0"><button type="submit">Entrar</button></p>
+  </form>
+</main>
+
+<main id="app" hidden>
+  <h1>Agregar Profesor Virtual</h1>
+  <p class="sub">Sube el .zip exportado de Rise y descarga una copia con el widget del búho incluido.</p>
+
+  <div class="card">
+    <div id="drop" tabindex="0" role="button" aria-label="Seleccionar o arrastrar archivos zip">
+      <strong>Arrastra aquí uno o varios .zip</strong>
+      <span>o haz clic para buscarlos en tu equipo</span>
+    </div>
+    <input id="file" type="file" accept=".zip,application/zip" multiple hidden>
+  </div>
+
+  <div class="card">
+    <details>
+      <summary>Configuración del widget</summary>
+      <label for="courseId">ID del curso (GLOBAL_COURSE_ID)</label>
+      <input id="courseId" type="text" value="_1_1" autocomplete="off">
+      <label for="docs">Documentos (GLOBAL_DOCUMENTS)</label>
+      <textarea id="docs" spellcheck="false" placeholder="Déjalo vacío si no usas documentos"></textarea>
+      <p class="hint">Se inserta tal cual dentro de los corchetes del arreglo, en JavaScript. Vacío = <code>[ ]</code>.</p>
+      <label for="url">URL del script del widget</label>
+      <input id="url" type="text" autocomplete="off">
+    </details>
+  </div>
+
+  <div class="card" id="results" hidden>
+    <ul id="list"></ul>
+  </div>
+
+  <p class="privacy">Todo se procesa en tu navegador. Los archivos no se suben a ningún servidor ni se guarda información.</p>
+</main>
+
+<script>
+// Pantalla de acceso: solo guarda una huella (PBKDF2-SHA256) de usuario y contraseña.
+// Es una barrera ligera del lado del cliente, no seguridad fuerte.
+(function () {
+  var HASH = '4ed490fc01536f9e9033a57c322e0eea3da907588048f57852de4493dca50cea';
+  var SALT = 'profesor-virtual-rise', ITER = 200000;
+  function hex(buf) {
+    return Array.prototype.map.call(new Uint8Array(buf), function (b) { return ('0' + b.toString(16)).slice(-2); }).join('');
+  }
+  function derive(user, pass) {
+    var enc = new TextEncoder();
+    return crypto.subtle.importKey('raw', enc.encode(user.trim().toLowerCase() + ':' + pass), 'PBKDF2', false, ['deriveBits'])
+      .then(function (key) {
+        return crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: enc.encode(SALT), iterations: ITER }, key, 256);
+      }).then(hex);
+  }
+  var form = document.getElementById('loginForm'), err = document.getElementById('loginErr');
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    err.hidden = true;
+    if (!window.crypto || !crypto.subtle) { err.textContent = 'Este navegador no permite validar el acceso (se requiere HTTPS).'; err.hidden = false; return; }
+    derive(document.getElementById('user').value, document.getElementById('pass').value).then(function (h) {
+      if (h === HASH) {
+        document.getElementById('gate').hidden = true;
+        document.getElementById('app').hidden = false;
+        document.getElementById('pass').value = '';
+      } else {
+        err.textContent = 'Usuario o contraseña incorrectos.'; err.hidden = false;
+      }
+    });
+  });
+})();
+</script>
+<script src="jszip.min.js"></script>
+<script src="inject.js"></script>
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var drop = $('drop'), fileInput = $('file'), list = $('list'), results = $('results');
+  $('url').value = PV.DEFAULT_SCRIPT_URL;
+
+  drop.addEventListener('click', function () { fileInput.click(); });
+  drop.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInput.click(); }
+  });
+  fileInput.addEventListener('change', function () { handle(fileInput.files); fileInput.value = ''; });
+  ['dragenter', 'dragover'].forEach(function (t) {
+    drop.addEventListener(t, function (e) { e.preventDefault(); drop.classList.add('over'); });
+  });
+  ['dragleave', 'drop'].forEach(function (t) {
+    drop.addEventListener(t, function (e) { e.preventDefault(); drop.classList.remove('over'); });
+  });
+  drop.addEventListener('drop', function (e) { handle(e.dataTransfer.files); });
+  // Evita que el navegador abra el zip si se suelta fuera de la zona.
+  window.addEventListener('dragover', function (e) { e.preventDefault(); });
+  window.addEventListener('drop', function (e) { e.preventDefault(); });
+
+  function handle(files) {
+    var zips = Array.prototype.filter.call(files, function (f) { return /\.zip$/i.test(f.name); });
+    if (files.length && !zips.length) { addRow('(archivo no válido)', 'Solo se aceptan archivos .zip', 'err'); return; }
+    // Procesa de uno en uno para no saturar la memoria.
+    zips.reduce(function (p, f) { return p.then(function () { return process(f); }); }, Promise.resolve());
+  }
+
+  function addRow(name, text, cls) {
+    results.hidden = false;
+    var li = document.createElement('li');
+    var box = document.createElement('div'); box.className = 'name';
+    var n = document.createElement('strong'); n.textContent = name;
+    var m = document.createElement('span'); m.className = 'msg ' + (cls || ''); m.textContent = text;
+    box.appendChild(n); box.appendChild(m); li.appendChild(box);
+    list.insertBefore(li, list.firstChild);
+    return { li: li, msg: m };
+  }
+
+  function process(file) {
+    var row = addRow(file.name, 'Procesando…');
+    var opts = { courseId: $('courseId').value, documents: $('docs').value, scriptUrl: $('url').value.trim() };
+    return JSZip.loadAsync(file).then(function (zip) {
+      var path = PV.findIndexPath(Object.keys(zip.files));
+      if (!path) throw new Error('No se encontró index.html dentro del zip. ¿Es una exportación de Rise?');
+      return zip.file(path).async('string').then(function (html) {
+        var r = PV.injectWidget(html, opts);
+        zip.file(path, r.html);
+        row.msg.textContent = 'Generando zip…';
+        return zip.generateAsync(
+          { type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 1 } },
+          function (meta) { row.msg.textContent = 'Generando zip… ' + Math.round(meta.percent) + '%'; }
+        ).then(function (blob) { return { blob: blob, status: r.status }; });
+      });
+    }).then(function (res) {
+      var name = PV.outputName(file.name);
+      var url = URL.createObjectURL(res.blob);
+      var btn = document.createElement('button'); btn.textContent = 'Descargar';
+      var a = document.createElement('a'); a.href = url; a.download = name;
+      btn.addEventListener('click', function () { a.click(); });
+      row.li.appendChild(btn);
+      row.msg.className = 'msg ok';
+      row.msg.textContent = (res.status === 'replaced' ? 'Ya tenía el widget; se actualizó. ' : 'Widget agregado. ') +
+        'Listo para descargar: ' + name;
+    }).catch(function (err) {
+      row.msg.className = 'msg err';
+      row.msg.textContent = 'Error: ' + (err && err.message ? err.message : err);
+    });
+  }
+})();
+</script>
+</body>
+</html>
